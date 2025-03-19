@@ -1,0 +1,25 @@
+{
+    "source": {
+        "include": ["src"],
+        "includePattern": ".+\\.(cpp|h|hpp)$",
+        "excludePattern": "(^|\\/|\\\\)_"
+    },
+    "plugins": [
+        "plugins/markdown",
+        "jsdoc-json"
+    ],
+    "opts": {
+        "template": "json",
+        "destination": "./docs/json/",
+        "recurse": true,
+        "verbose": true
+    },
+    "tags": {
+        "allowUnknownTags": true,
+        "dictionaries": ["jsdoc"]
+    },
+    "templates": {
+        "cleverLinks": false,
+        "monospaceLinks": false
+    }
+} 

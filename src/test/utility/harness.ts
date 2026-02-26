@@ -12,6 +12,8 @@ export interface TestInputOptions {
   only?: boolean;
   path?: string;
   outputLex?: boolean;
+  tableMapping?: ReadonlyMap<string, string>;
+  stripHelpers?: boolean;
 }
 
 function writeJson(json: {}, name: string) {
@@ -25,7 +27,14 @@ export function testInput(
   input: string,
   expected?: string,
   expectedComments?: readonly Comment[],
-  { only, repoUrl, path = "PATH", outputLex }: TestInputOptions = {}
+  {
+    only,
+    repoUrl,
+    path = "PATH",
+    outputLex,
+    tableMapping,
+    stripHelpers,
+  }: TestInputOptions = {}
 ) {
   const testFn = only ? test.only : test;
   testFn(name, (t) => {
@@ -75,7 +84,9 @@ export function testInput(
         t.error(e, `docErrors[${i}]`);
       });
 
-      const actual = formatDocs(processDocs(docs, repoUrl || null));
+      const actual = formatDocs(
+        processDocs(docs, repoUrl || null, { tableMapping, stripHelpers })
+      );
 
       if (expected !== undefined) {
         t.isEqual(actual, expected, "formatDocs has correct output");

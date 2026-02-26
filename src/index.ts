@@ -7,6 +7,8 @@ import { header } from "./header";
 import { fail, Result, success } from "./result";
 import { applyRules } from "./rules";
 import { appendSourceLinks } from "./source";
+import { stripHelperTypes } from "./stripHelpers";
+import { applyTableMapping } from "./tableMapping";
 import { addTables, mergeTables } from "./tables";
 import { trimTrailingWhitespace } from "./utility";
 
@@ -41,10 +43,23 @@ function runProcessors(docs: Doc[], processors: readonly DocProcessor[]) {
   return processors.reduce((acc, processor) => processor(acc), docs);
 }
 
-export function processDocs(docs: Doc[], repoUrl: string | null): Doc[] {
+export interface ProcessDocsOptions {
+  tableMapping?: ReadonlyMap<string, string> | null;
+  stripHelpers?: boolean;
+}
+
+export function processDocs(
+  docs: Doc[],
+  repoUrl: string | null,
+  options?: ProcessDocsOptions
+): Doc[] {
+  const opts = options ?? {};
+
   return runProcessors(docs, [
     removeEmptyDocs,
     appendSourceLinks(repoUrl),
+    applyTableMapping(opts.tableMapping ?? null),
+    ...(opts.stripHelpers ? [stripHelperTypes] : []),
     processGlobals,
     addTables,
     addTableToEnumFields,

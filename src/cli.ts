@@ -12,6 +12,7 @@ import { addHeader, formatDocs, getDocs, processDocs } from ".";
 import project from "../package.json";
 import { Doc } from "./doc";
 import { toResultAsync } from "./result";
+import { parseTableMappings } from "./tableMapping";
 
 interface Options {
   src: string[];
@@ -21,6 +22,8 @@ interface Options {
   error?: boolean;
   repo?: string;
   file?: string;
+  "table-mapping"?: string[];
+  "strip-helpers"?: boolean;
 }
 const optionList = [
   {
@@ -70,6 +73,22 @@ const optionList = [
       {yellow "https://github.com/<user>/<repository>/blob/<commit>/"}
 
       `,
+  },
+  {
+    name: "table-mapping",
+    type: String,
+    multiple: true,
+    defaultValue: [],
+    typeLabel: "{underline from:to} ...",
+    description:
+      'Remap table names in the output. Format: "OldName:NewName". Can be specified multiple times.\n',
+  },
+  {
+    name: "strip-helpers",
+    type: Boolean,
+    defaultValue: false,
+    description:
+      "{white (Default: false)} Strip standalone helper types (classes, enums, aliases) from the output. Keeps only function and table declarations.\n",
   },
   {
     name: "error",
@@ -135,6 +154,8 @@ async function runAsync() {
     repo,
     file,
     error: enableErrorCode,
+    "table-mapping": tableMappingRaw,
+    "strip-helpers": stripHelpers,
   } = options;
 
   if (version) {
@@ -146,6 +167,8 @@ async function runAsync() {
     printUsage();
     process.exit(0);
   }
+
+  const tableMapping = parseTableMappings(tableMappingRaw ?? []);
 
   const srcFiles = await glob(src);
 
@@ -203,7 +226,7 @@ async function runAsync() {
         const rel = relative(cwd(), path);
         const outPath = join(dest, `${rel}.lua`);
         if (ds.length > 0) {
-          await writeLibraryFile(ds, outPath, repo, [path]);
+          await writeLibraryFile(ds, outPath, repo, [path], tableMapping, stripHelpers);
         }
       })
     );
@@ -215,7 +238,9 @@ async function runAsync() {
       valid.flatMap(([, ds]) => ds),
       outPath,
       repo,
-      sources
+      sources,
+      tableMapping,
+      stripHelpers
     );
   }
 
@@ -233,10 +258,14 @@ async function writeLibraryFile(
   docs: Doc[],
   outPath: string,
   repo?: string,
-  sources: string[] = []
+  sources: string[] = [],
+  tableMapping?: ReadonlyMap<string, string>,
+  stripHelpers?: boolean
 ) {
   try {
-    const formattedDocs = formatDocs(processDocs(docs, repo ?? null));
+    const formattedDocs = formatDocs(
+      processDocs(docs, repo ?? null, { tableMapping, stripHelpers })
+    );
     await mkdir(dirname(outPath), { recursive: true });
     await writeFile(outPath, addHeader(formattedDocs, sources));
     console.log(chalk`{bold.blue ►} '{white ${outPath}}'`);

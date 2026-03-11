@@ -10,6 +10,7 @@ export type KnownAttribute =
   | FunctionAttribute
   | GlobalAttribute
   | ParamAttribute
+  | ReturnAttribute
   | TableAttribute;
 
 interface BaseAttribute {
@@ -54,6 +55,11 @@ export interface ClassAttribute extends BaseAttribute {
 
 export interface GlobalAttribute extends Omit<FieldAttribute, "attributeType"> {
   attributeType: "global";
+}
+
+export interface ReturnAttribute extends BaseAttribute {
+  attributeType: "return";
+  args: { type: LuaType; description: string };
 }
 
 export interface FieldAttribute extends BaseAttribute {
@@ -103,6 +109,10 @@ export function formatAttribute(attribute: Readonly<Attribute>): string {
       return format(known.attributeType, formatTypeName(name), description);
     }
     case "class": {
+      const { type, description } = known.args;
+      return format(known.attributeType, formatType(type), description);
+    }
+    case "return": {
       const { type, description } = known.args;
       return format(known.attributeType, formatType(type), description);
     }

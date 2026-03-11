@@ -17,7 +17,7 @@ const commentLexer = moo.states({
     text: moo.fallback,
   },
   comment: {
-    indent: /^\s+\*(?!\/)/,
+    indent: /^\s*\*(?!\/)/,
     commentEnd: { match: /\*+\//, pop: 1 },
     text: moo.fallback,
   },

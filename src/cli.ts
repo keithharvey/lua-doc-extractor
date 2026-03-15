@@ -10,6 +10,15 @@ import { dirname, join, relative } from "path";
 import { cwd } from "process";
 import { addHeader, formatDocs, getDocs, processDocs } from ".";
 import project from "../package.json";
+import {
+  applyFileContexts,
+  bucketSuffix,
+  collectAllContexts,
+  findMultiContextTables,
+  generateClassDeclarations,
+  partitionDocsByContext,
+  remapDocTableNames,
+} from "./context";
 import { Doc } from "./doc";
 import { toResultAsync } from "./result";
 
@@ -192,11 +201,33 @@ async function runAsync() {
     })
   );
 
-  const valid = processed.filter((e) => e != null);
+  const valid = processed.filter((e) => e != null) as [string, Doc[]][];
+
+  applyFileContexts(valid);
+  const allContexts = collectAllContexts(valid);
 
   console.log(chalk`\n{bold.underline Writing output:}\n`);
 
-  if (file === undefined) {
+  if (allContexts.size > 0) {
+    const buckets = partitionDocsByContext(valid, allContexts);
+    const tableBuckets = findMultiContextTables(buckets);
+
+    for (const [bucket, entries] of buckets) {
+      const outPath = join(dest, `${bucket}.lua`);
+      const sources = entries.map(([p]) => p);
+      const docs = entries
+        .flatMap(([, ds]) => ds)
+        .map((d) => structuredClone(d));
+
+      for (const [table, bucketSet] of tableBuckets) {
+        if (bucketSet.size < 2) continue;
+        remapDocTableNames(docs, table, table + bucketSuffix(bucket));
+      }
+
+      const preamble = generateClassDeclarations(tableBuckets, bucket);
+      await writeLibraryFile(docs, outPath, repo, sources, preamble);
+    }
+  } else if (file === undefined) {
     // Multi-file output.
     await Promise.all(
       valid.map(async ([path, ds]) => {
@@ -233,12 +264,17 @@ async function writeLibraryFile(
   docs: Doc[],
   outPath: string,
   repo?: string,
-  sources: string[] = []
+  sources: string[] = [],
+  preamble?: string
 ) {
   try {
     const formattedDocs = formatDocs(processDocs(docs, repo ?? null));
+    const header = addHeader("", sources);
+    const body = preamble
+      ? `${header}\n${preamble}\n\n${formattedDocs}`
+      : addHeader(formattedDocs, sources);
     await mkdir(dirname(outPath), { recursive: true });
-    await writeFile(outPath, addHeader(formattedDocs, sources));
+    await writeFile(outPath, body);
     console.log(chalk`{bold.blue ►} '{white ${outPath}}'`);
   } catch (e) {
     console.error(

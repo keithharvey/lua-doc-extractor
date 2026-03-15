@@ -40,6 +40,9 @@ attribute ->
   | %classAttr __ namedType description {% ([,, type, description]) =>
       attr("class", { type, description })
     %}
+  | %returnAttr __ unionType unionDesc {% ([,, type, description]) =>
+      attr("return", { type, description } as any)
+    %}
   | fieldAttr {% id %}
   | %attribute lines {% ([a, description]) =>
       attr(a.value, { description })

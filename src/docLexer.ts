@@ -12,6 +12,7 @@ export const docLexer = moo.states({
         tableAttr: "@table",
         functionAttr: "@function",
         paramAttr: "@param",
+        returnAttr: "@return",
       }),
       match: /@[^\s]+/,
       value: (x) => x.substring(1),
@@ -19,7 +20,7 @@ export const docLexer = moo.states({
     pipe: "|",
     syntax: [..."()[]{}<>:?."],
     newline: { match: /\r?\n/, lineBreaks: true },
-    literal: /[-+]?[0-9]+|"[^"]*?"/,
+    literal: /[-+]?[0-9]+|"[^"]*?"|false|true|nil/,
     // Matches all whitespace except linefeeds.
     // https://stackoverflow.com/a/3469155/317135
     space: /[^\S\r\n]+/,

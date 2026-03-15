@@ -89,20 +89,6 @@ testInput(
 );
 
 testInput(
-  "Variadic function return",
-  dedent`
-    /***
-     * @function returner
-     * @return ... integer
-     */
-    `,
-  dedent`
-    ---@return ... integer
-    function returner() end
-  `
-);
-
-testInput(
   "Nested table function",
   dedent`
     /***
@@ -123,5 +109,43 @@ testInput(
     `,
   dedent`
     function Foo.Bar.baz() end
+  `
+);
+
+testInput(
+  "Variadic function return",
+  dedent`
+    /***
+     * @function returner
+     * @return integer ...
+     */
+    `,
+  dedent`
+    ---@return integer ...
+    function returner() end
+  `
+);
+
+testInput(
+  "Multiple returns with union types containing literal keywords",
+  dedent`
+    /***
+     * @function Spring.GetUnitMoveDefID
+     *
+     * Returns a numerical movedef ID and its name.
+     *
+     * @param unitID integer
+     *
+     * @return integer|false|nil moveDefID Some long description
+     * @return string|nil moveDefName Another really, really long description
+     */
+    `,
+  dedent`
+    ---Returns a numerical movedef ID and its name.
+    ---
+    ---@param unitID integer
+    ---@return integer|false|nil moveDefID Some long description
+    ---@return string|nil moveDefName Another really, really long description
+    function Spring.GetUnitMoveDefID(unitID) end
   `
 );

@@ -43,6 +43,9 @@ attribute ->
   | %returnAttr __ unionType unionDesc {% ([,, type, description]) =>
       attr("return", { type, description } as any)
     %}
+  | %returnAttr __ "." "." "." __ unionType unionDesc {% ([,,,,,, type, description]) =>
+      attr("return", { type, description, variadic: true } as any)
+    %}
   | fieldAttr {% id %}
   | %attribute lines {% ([a, description]) =>
       attr(a.value, { description })

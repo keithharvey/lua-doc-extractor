@@ -114,6 +114,10 @@ export function formatAttribute(attribute: Readonly<Attribute>): string {
     }
     case "return": {
       const { type, description } = known.args;
+      const variadic = (known.args as any).variadic;
+      if (variadic) {
+        return format(known.attributeType, "...", formatType(type), description);
+      }
       return format(known.attributeType, formatType(type), description);
     }
     case "field": {

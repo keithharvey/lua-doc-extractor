@@ -125,3 +125,27 @@ testInput(
     function Foo.Bar.baz() end
   `
 );
+
+testInput(
+  "Return with union type containing literal keywords",
+  dedent`
+    /***
+     * @function Spring.GetUnitMoveDefID
+     *
+     * Returns a numerical movedef ID and its name.
+     *
+     * @param unitID integer
+     *
+     * @return integer|false|nil moveDefID
+     * @return string|nil moveDefName
+     */
+    `,
+  dedent`
+    ---Returns a numerical movedef ID and its name.
+    ---
+    ---@param unitID integer
+    ---@return integer|false|nil moveDefID
+    ---@return string|nil moveDefName
+    function Spring.GetUnitMoveDefID(unitID) end
+  `
+);

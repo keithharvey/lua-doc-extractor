@@ -149,3 +149,28 @@ testInput(
     function Spring.GetUnitMoveDefID(unitID) end
   `
 );
+
+testInput(
+  "Support multiple function definitions with one comment block",
+  dedent`
+    /***
+     * Example callin.
+     *
+     * @function Gadget:SomeCallin
+     * @function Widget:SomeCallin
+     *
+     * @param unitID integer
+     */
+    `,
+  dedent`
+    ---Example callin.
+    ---
+    ---@param unitID integer
+    function Gadget:SomeCallin(unitID) end
+
+    ---Example callin.
+    ---
+    ---@param unitID integer
+    function Widget:SomeCallin(unitID) end
+  `
+);

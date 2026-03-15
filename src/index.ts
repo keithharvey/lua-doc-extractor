@@ -5,7 +5,8 @@ import { renderStandaloneFields } from "./field";
 import { processGlobals } from "./global";
 import { header } from "./header";
 import { fail, Result, success } from "./result";
-import { applyRules } from "./rules";
+import { functionExpansion } from "./functionExpansion";
+import { applyRules } from "./applyPostTransformRules";
 import { appendSourceLinks } from "./source";
 import { addTables, mergeTables } from "./tables";
 import { trimTrailingWhitespace } from "./utility";
@@ -51,6 +52,7 @@ export function processDocs(docs: Doc[], repoUrl: string | null): Doc[] {
     mergeTables,
     mergeEnumAttributes,
     renderStandaloneFields,
+    functionExpansion,
     applyRules,
   ]);
 }

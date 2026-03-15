@@ -75,8 +75,10 @@ function formatTableFields(fields: readonly FieldAttribute[]): string {
 }
 
 export function applyRules(docs: Doc[]): Doc[] {
-  docs.forEach(apply);
-  return docs;
+  return docs.map((doc) => {
+    apply(doc);
+    return doc;
+  });
 }
 
 const ruleHandlers = {

@@ -212,6 +212,9 @@ async function runAsync() {
     const buckets = partitionDocsByContext(valid, allContexts);
     const tableBuckets = findMultiContextTables(buckets);
 
+    const sharedEntries = buckets.get("shared");
+    buckets.delete("shared");
+
     for (const [bucket, entries] of buckets) {
       const outPath = join(dest, `${bucket}.lua`);
       const sources = entries.map(([p]) => p);
@@ -226,6 +229,27 @@ async function runAsync() {
 
       const preamble = generateClassDeclarations(tableBuckets, bucket);
       await writeLibraryFile(docs, outPath, repo, sources, preamble);
+    }
+
+    const sharedPreamble = generateClassDeclarations(tableBuckets, "shared");
+    if (sharedPreamble) {
+      await writeLibraryFile([], join(dest, "shared.lua"), repo, [], sharedPreamble);
+    }
+
+    if (sharedEntries) {
+      await Promise.all(
+        sharedEntries.map(async ([path, ds]) => {
+          if (ds.length === 0) return;
+          const docs = ds.map((d) => structuredClone(d));
+          for (const [table, bucketSet] of tableBuckets) {
+            if (bucketSet.size < 2) continue;
+            remapDocTableNames(docs, table, table + bucketSuffix("shared"));
+          }
+          const rel = relative(cwd(), path);
+          const outPath = join(dest, `${rel}.lua`);
+          await writeLibraryFile(docs, outPath, repo, [path]);
+        })
+      );
     }
   } else if (file === undefined) {
     // Multi-file output.

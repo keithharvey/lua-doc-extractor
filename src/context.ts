@@ -7,6 +7,7 @@ import {
   TableAttribute,
 } from "./attribute";
 import { Doc, filterAttributes, hasAttribute, removeAttributes } from "./doc";
+import { FileOutput } from "./output";
 
 const KNOWN_DOC_TYPES = [
   "function",
@@ -16,9 +17,11 @@ const KNOWN_DOC_TYPES = [
   "global",
 ] as const;
 
-function isStandaloneContextDoc(doc: Doc): boolean {
+const FILE_ATTRIBUTE_TYPES = ["context"] as const;
+
+function isFileAttributeDoc(doc: Doc): boolean {
   return (
-    hasAttribute(doc, "context") &&
+    FILE_ATTRIBUTE_TYPES.some((t) => hasAttribute(doc, t)) &&
     !KNOWN_DOC_TYPES.some((t) => hasAttribute(doc, t))
   );
 }
@@ -44,13 +47,33 @@ export function removeContextAttributes(docs: Doc[]): Doc[] {
 
 export function applyFileContexts(
   fileEntries: readonly (readonly [string, Doc[]])[]
-): void {
-  for (const [, docs] of fileEntries) {
-    const standaloneIdx = docs.findIndex(isStandaloneContextDoc);
-    if (standaloneIdx === -1) continue;
+): string[] {
+  const errors: string[] = [];
 
-    const fileContexts = getDocContexts(docs[standaloneIdx]);
-    docs.splice(standaloneIdx, 1);
+  for (const [path, docs] of fileEntries) {
+    const fileAttrIndices: number[] = [];
+    for (let i = 0; i < docs.length; i++) {
+      if (isFileAttributeDoc(docs[i])) fileAttrIndices.push(i);
+    }
+
+    if (fileAttrIndices.length === 0) continue;
+
+    if (fileAttrIndices.length > 1) {
+      errors.push(
+        `'${path}': multiple file-level attribute docs (found ${fileAttrIndices.length}, expected at most 1)`
+      );
+      continue;
+    }
+
+    if (fileAttrIndices[0] !== 0) {
+      errors.push(
+        `'${path}': file-level attribute doc must be the first doc in the file`
+      );
+      continue;
+    }
+
+    const fileContexts = getDocContexts(docs[0]);
+    docs.splice(0, 1);
 
     for (const doc of docs) {
       if (!hasAttribute(doc, "context") && fileContexts.length > 0) {
@@ -63,6 +86,8 @@ export function applyFileContexts(
       }
     }
   }
+
+  return errors;
 }
 
 export function collectAllContexts(
@@ -213,4 +238,82 @@ export function generateClassDeclarations(
   }
 
   return lines.join("\n\n");
+}
+
+function cloneAndRemapDocs(
+  entries: [string, Doc[]][],
+  tableBuckets: Map<string, Set<string>>,
+  bucketName: string
+): Doc[] {
+  const docs = entries.flatMap(([, ds]) => ds).map((d) => structuredClone(d));
+  for (const [table, bucketSet] of tableBuckets) {
+    if (bucketSet.size < 2) continue;
+    remapDocTableNames(docs, table, table + bucketSuffix(bucketName));
+  }
+  return docs;
+}
+
+export function projectContextOutputs(
+  fileEntries: readonly (readonly [string, Doc[]])[],
+  resolveOutputName: (sourcePath: string) => string,
+): FileOutput[] {
+  const allContexts = collectAllContexts(fileEntries);
+
+  if (allContexts.size === 0) {
+    const outputs: FileOutput[] = [];
+    for (const [path, docs] of fileEntries) {
+      if (docs.length === 0) continue;
+      outputs.push({
+        name: `${resolveOutputName(path)}.lua`,
+        docs: [...docs],
+        sources: [path],
+        preamble: "",
+      });
+    }
+    return outputs;
+  }
+
+  const buckets = partitionDocsByContext(fileEntries, allContexts);
+  const tableBuckets = findMultiContextTables(buckets);
+
+  const sharedRawEntries = buckets.get("shared") ?? [];
+  buckets.delete("shared");
+
+  const outputs: FileOutput[] = [];
+
+  for (const [name, entries] of buckets) {
+    outputs.push({
+      name: `${name}.lua`,
+      docs: cloneAndRemapDocs(entries, tableBuckets, name),
+      sources: entries.map(([p]) => p),
+      preamble: generateClassDeclarations(tableBuckets, name),
+    });
+  }
+
+  const sharedPreamble = generateClassDeclarations(tableBuckets, "shared");
+  if (sharedPreamble) {
+    outputs.push({
+      name: "shared.lua",
+      docs: [],
+      sources: [],
+      preamble: sharedPreamble,
+    });
+  }
+
+  for (const [path, rawDocs] of sharedRawEntries) {
+    if (rawDocs.length === 0) continue;
+    const docs = rawDocs.map((d) => structuredClone(d));
+    for (const [table, bucketSet] of tableBuckets) {
+      if (bucketSet.size < 2) continue;
+      remapDocTableNames(docs, table, table + bucketSuffix("shared"));
+    }
+    outputs.push({
+      name: `${resolveOutputName(path)}.lua`,
+      docs,
+      sources: [path],
+      preamble: "",
+    });
+  }
+
+  return outputs;
 }

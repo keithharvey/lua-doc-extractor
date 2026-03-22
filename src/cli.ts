@@ -12,14 +12,10 @@ import { addHeader, formatDocs, getDocs, processDocs } from ".";
 import project from "../package.json";
 import {
   applyFileContexts,
-  bucketSuffix,
-  collectAllContexts,
-  findMultiContextTables,
-  generateClassDeclarations,
-  partitionDocsByContext,
-  remapDocTableNames,
+  projectContextOutputs,
 } from "./context";
 import { Doc } from "./doc";
+import { mergeFileOutputs } from "./output";
 import { toResultAsync } from "./result";
 
 interface Options {
@@ -203,74 +199,24 @@ async function runAsync() {
 
   const valid = processed.filter((e) => e != null) as [string, Doc[]][];
 
-  applyFileContexts(valid);
-  const allContexts = collectAllContexts(valid);
+  errors.push(...applyFileContexts(valid));
+  let outputs = projectContextOutputs(
+    valid, (p) => relative(cwd(), p)
+  );
+  if (file !== undefined) {
+    outputs = mergeFileOutputs(outputs, file);
+  }
 
   console.log(chalk`\n{bold.underline Writing output:}\n`);
 
-  if (allContexts.size > 0) {
-    const buckets = partitionDocsByContext(valid, allContexts);
-    const tableBuckets = findMultiContextTables(buckets);
-
-    const sharedEntries = buckets.get("shared");
-    buckets.delete("shared");
-
-    for (const [bucket, entries] of buckets) {
-      const outPath = join(dest, `${bucket}.lua`);
-      const sources = entries.map(([p]) => p);
-      const docs = entries
-        .flatMap(([, ds]) => ds)
-        .map((d) => structuredClone(d));
-
-      for (const [table, bucketSet] of tableBuckets) {
-        if (bucketSet.size < 2) continue;
-        remapDocTableNames(docs, table, table + bucketSuffix(bucket));
-      }
-
-      const preamble = generateClassDeclarations(tableBuckets, bucket);
-      await writeLibraryFile(docs, outPath, repo, sources, preamble);
-    }
-
-    const sharedPreamble = generateClassDeclarations(tableBuckets, "shared");
-    if (sharedPreamble) {
-      await writeLibraryFile([], join(dest, "shared.lua"), repo, [], sharedPreamble);
-    }
-
-    if (sharedEntries) {
-      await Promise.all(
-        sharedEntries.map(async ([path, ds]) => {
-          if (ds.length === 0) return;
-          const docs = ds.map((d) => structuredClone(d));
-          for (const [table, bucketSet] of tableBuckets) {
-            if (bucketSet.size < 2) continue;
-            remapDocTableNames(docs, table, table + bucketSuffix("shared"));
-          }
-          const rel = relative(cwd(), path);
-          const outPath = join(dest, `${rel}.lua`);
-          await writeLibraryFile(docs, outPath, repo, [path]);
-        })
-      );
-    }
-  } else if (file === undefined) {
-    // Multi-file output.
-    await Promise.all(
-      valid.map(async ([path, ds]) => {
-        const rel = relative(cwd(), path);
-        const outPath = join(dest, `${rel}.lua`);
-        if (ds.length > 0) {
-          await writeLibraryFile(ds, outPath, repo, [path]);
-        }
-      })
-    );
-  } else {
-    // Single-file output.
-    const outPath = join(dest, file);
-    const sources = valid.map(([path]) => path);
+  for (const output of outputs) {
+    if (output.docs.length === 0 && !output.preamble) continue;
     await writeLibraryFile(
-      valid.flatMap(([, ds]) => ds),
-      outPath,
+      output.docs,
+      join(dest, output.name),
       repo,
-      sources
+      output.sources,
+      output.preamble || undefined
     );
   }
 

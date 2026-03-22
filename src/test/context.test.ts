@@ -149,11 +149,84 @@ test("applyFileContexts: no standalone context is a no-op", (t) => {
      */
   `);
   const entries: [string, Doc[]][] = [["test.cpp", docs]];
-  applyFileContexts(entries);
+  const errors = applyFileContexts(entries);
 
+  t.equal(errors.length, 0, "no errors");
   const [, fileDocs] = entries[0];
   t.equal(fileDocs.length, 1);
   t.deepEqual(getDocContexts(fileDocs[0]), ["synced"]);
+  t.end();
+});
+
+test("applyFileContexts: errors on duplicate file-level context docs", (t) => {
+  const docs = parseDocs(
+    dedent`
+    /***
+     * @context synced
+     */
+    /***
+     * @context unsynced
+     */
+    /***
+     * @function Foo
+     */
+  `,
+    "dup.cpp"
+  );
+
+  const entries: [string, Doc[]][] = [["dup.cpp", docs]];
+  const errors = applyFileContexts(entries);
+
+  t.equal(errors.length, 1, "one error returned");
+  t.ok(errors[0].includes("multiple file-level attribute docs"), "error mentions duplicates");
+  t.equal(entries[0][1].length, 3, "docs unchanged on error");
+  t.end();
+});
+
+test("applyFileContexts: errors when file-level context is not first", (t) => {
+  const docs = parseDocs(
+    dedent`
+    /***
+     * @function Foo
+     */
+    /***
+     * @context synced
+     */
+    /***
+     * @function Bar
+     */
+  `,
+    "late.cpp"
+  );
+
+  const entries: [string, Doc[]][] = [["late.cpp", docs]];
+  const errors = applyFileContexts(entries);
+
+  t.equal(errors.length, 1, "one error returned");
+  t.ok(errors[0].includes("must be the first doc"), "error mentions position");
+  t.equal(entries[0][1].length, 3, "docs unchanged on error");
+  t.end();
+});
+
+test("applyFileContexts: valid first-position context returns no errors", (t) => {
+  const docs = parseDocs(
+    dedent`
+    /***
+     * @context synced
+     */
+    /***
+     * @function Foo
+     */
+  `,
+    "ok.cpp"
+  );
+
+  const entries: [string, Doc[]][] = [["ok.cpp", docs]];
+  const errors = applyFileContexts(entries);
+
+  t.equal(errors.length, 0, "no errors");
+  t.equal(entries[0][1].length, 1, "standalone doc removed");
+  t.deepEqual(getDocContexts(entries[0][1][0]), ["synced"]);
   t.end();
 });
 
@@ -297,6 +370,73 @@ test("partitionDocsByContext: mixed docs across files", (t) => {
   t.equal(syncedDocs.length, 1, "one synced doc");
   t.equal(unsyncedDocs.length, 1, "one unsynced doc");
   t.equal(sharedDocs.length, 1, "one shared doc");
+  t.end();
+});
+
+test("partitionDocsByContext: 3-context combinatorics (a, b, c)", (t) => {
+  const docs = parseDocs(
+    dedent`
+    /***
+     * @function OnlyA
+     * @context a
+     */
+    /***
+     * @function OnlyB
+     * @context b
+     */
+    /***
+     * @function OnlyC
+     * @context c
+     */
+    /***
+     * @function AB
+     * @context a, b
+     */
+    /***
+     * @function BC
+     * @context b, c
+     */
+    /***
+     * @function AC
+     * @context a, c
+     */
+    /***
+     * @function ABC
+     * @context a, b, c
+     */
+    /***
+     * @function NoCtx
+     */
+  `,
+    "combo.cpp"
+  );
+
+  const all = new Set(["a", "b", "c"]);
+  const buckets = partitionDocsByContext([["combo.cpp", docs]], all);
+
+  const getName = (bucket: string) =>
+    buckets
+      .get(bucket)
+      ?.flatMap(([, d]) => d)
+      .map((d) => (d.attributes.find((a) => a.attributeType === "function") as any).args.name.join(".")) ?? [];
+
+  t.deepEqual(getName("a"), ["OnlyA"], "single context a");
+  t.deepEqual(getName("b"), ["OnlyB"], "single context b");
+  t.deepEqual(getName("c"), ["OnlyC"], "single context c");
+  t.deepEqual(getName("a_b"), ["AB"], "pair a+b is a_b, not shared");
+  t.deepEqual(getName("b_c"), ["BC"], "pair b+c is b_c, not shared");
+  t.deepEqual(getName("a_c"), ["AC"], "pair a+c is a_c, not shared");
+
+  const sharedNames = getName("shared");
+  t.ok(sharedNames.includes("ABC"), "all contexts -> shared");
+  t.ok(sharedNames.includes("NoCtx"), "no context -> shared");
+  t.equal(sharedNames.length, 2, "only ABC and NoCtx in shared");
+
+  t.deepEqual(
+    [...buckets.keys()].sort(),
+    ["a", "a_b", "a_c", "b", "b_c", "c", "shared"],
+    "exactly 7 buckets"
+  );
   t.end();
 });
 

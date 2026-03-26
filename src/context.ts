@@ -290,28 +290,12 @@ export function projectContextOutputs(
     });
   }
 
-  const sharedPreamble = generateClassDeclarations(tableBuckets, "shared");
-  if (sharedPreamble) {
+  if (sharedRawEntries.length > 0) {
     outputs.push({
       name: "shared.lua",
-      docs: [],
-      sources: [],
-      preamble: sharedPreamble,
-    });
-  }
-
-  for (const [path, rawDocs] of sharedRawEntries) {
-    if (rawDocs.length === 0) continue;
-    const docs = rawDocs.map((d) => structuredClone(d));
-    for (const [table, bucketSet] of tableBuckets) {
-      if (bucketSet.size < 2) continue;
-      remapDocTableNames(docs, table, table + bucketSuffix("shared"));
-    }
-    outputs.push({
-      name: `${resolveOutputName(path)}.lua`,
-      docs,
-      sources: [path],
-      preamble: "",
+      docs: cloneAndRemapDocs(sharedRawEntries, tableBuckets, "shared"),
+      sources: sharedRawEntries.map(([p]) => p),
+      preamble: generateClassDeclarations(tableBuckets, "shared"),
     });
   }
 

@@ -690,13 +690,14 @@ test("generateClassDeclarations: shared bucket gets base class", (t) => {
   t.end();
 });
 
-test("generateClassDeclarations: non-shared bucket inherits from shared", (t) => {
+test("generateClassDeclarations: non-shared bucket gets independent class", (t) => {
   const tableBuckets = new Map([
     ["Spring", new Set(["synced", "unsynced", "shared"])],
   ]);
   const result = generateClassDeclarations(tableBuckets, "synced");
-  t.ok(result.includes("---@class SpringSynced : SpringShared"));
+  t.ok(result.includes("---@class SpringSynced"));
   t.ok(result.includes("SpringSynced = {}"));
+  t.ok(!result.includes(":"), "no inheritance for non-shared");
   t.end();
 });
 
@@ -717,8 +718,9 @@ test("generateClassDeclarations: multiple multi-context tables", (t) => {
     ["Game", new Set(["synced", "shared"])],
   ]);
   const result = generateClassDeclarations(tableBuckets, "synced");
-  t.ok(result.includes("---@class SpringSynced : SpringShared"));
-  t.ok(result.includes("---@class GameSynced : GameShared"));
+  t.ok(result.includes("---@class SpringSynced"));
+  t.ok(result.includes("---@class GameSynced"));
+  t.ok(!result.includes(":"), "no inheritance");
   t.end();
 });
 
@@ -821,7 +823,8 @@ test("end-to-end: context projection remaps multi-bucket tables with class inher
   );
 
   const syncedPreamble = generateClassDeclarations(tableBuckets, "synced");
-  t.ok(syncedPreamble.includes("---@class SpringSynced : SpringShared"));
+  t.ok(syncedPreamble.includes("---@class SpringSynced"));
+  t.ok(!syncedPreamble.includes(":"), "no inheritance for synced");
   t.ok(!syncedPreamble.includes("VFS"), "VFS not in class declarations");
 
   const sharedPreamble = generateClassDeclarations(tableBuckets, "shared");

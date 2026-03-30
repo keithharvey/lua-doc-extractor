@@ -227,14 +227,7 @@ export function generateClassDeclarations(
   for (const [table, buckets] of tableBuckets) {
     if (buckets.size < 2) continue;
     const className = `${table}${suffix}`;
-    if (bucketName === "shared") {
-      lines.push(`---@class ${className}\n${className} = {}`);
-    } else {
-      const sharedClass = `${table}${bucketSuffix("shared")}`;
-      lines.push(
-        `---@class ${className} : ${sharedClass}\n${className} = {}`
-      );
-    }
+    lines.push(`---@class ${className}\n${className} = {}`);
   }
 
   return lines.join("\n\n");

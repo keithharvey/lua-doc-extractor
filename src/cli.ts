@@ -6,14 +6,10 @@ import commandLineUsage from "command-line-usage";
 import dedent from "dedent-js";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { glob } from "glob";
-import { dirname, join, relative } from "path";
-import { cwd } from "process";
+import { dirname, join } from "path";
 import { addHeader, formatDocs, getDocs, processDocs } from ".";
 import project from "../package.json";
-import {
-  applyFileContexts,
-  projectContextOutputs,
-} from "./context";
+import { lintDuplicateDeclarations, projectOutputs } from "./context";
 import { Doc } from "./doc";
 import { mergeFileOutputs } from "./output";
 import { toResultAsync } from "./result";
@@ -199,10 +195,8 @@ async function runAsync() {
 
   const valid = processed.filter((e) => e != null) as [string, Doc[]][];
 
-  errors.push(...applyFileContexts(valid));
-  let outputs = projectContextOutputs(
-    valid, (p) => relative(cwd(), p)
-  );
+  errors.push(...lintDuplicateDeclarations(valid));
+  let outputs = projectOutputs(valid);
   if (file !== undefined) {
     outputs = mergeFileOutputs(outputs, file);
   }

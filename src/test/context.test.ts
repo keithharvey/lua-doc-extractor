@@ -2,6 +2,8 @@ import dedent from "dedent-js";
 import test from "tape";
 import { getDocs } from "..";
 import {
+  applyFileContexts,
+  getDocContexts,
   getDocTableName,
   lintDuplicateDeclarations,
   projectOutputs,
@@ -300,5 +302,189 @@ test("removeContextAttributes: strips stray @context", (t) => {
   removeContextAttributes(docs);
   const hasContext = docs[0].attributes.some((a) => a.attributeType === "context");
   t.notOk(hasContext);
+  t.end();
+});
+
+// --- getDocContexts ---
+
+test("getDocContexts: single context", (t) => {
+  const docs = parseDocs(dedent`
+    /***
+     * @function Foo.Bar
+     * @context synced
+     */
+  `);
+  t.deepEqual(getDocContexts(docs[0]), ["synced"]);
+  t.end();
+});
+
+test("getDocContexts: comma-separated contexts", (t) => {
+  const docs = parseDocs(dedent`
+    /***
+     * @function Foo.Bar
+     * @context synced, unsynced
+     */
+  `);
+  t.deepEqual(getDocContexts(docs[0]).sort(), ["synced", "unsynced"]);
+  t.end();
+});
+
+test("getDocContexts: no @context returns empty", (t) => {
+  const docs = parseDocs(dedent`
+    /***
+     * @function Foo.Bar
+     */
+  `);
+  t.deepEqual(getDocContexts(docs[0]), []);
+  t.end();
+});
+
+// --- applyFileContexts ---
+
+test("applyFileContexts: standalone @context stamps subsequent docs", (t) => {
+  const docs = parseDocs(dedent`
+    /*** @context synced */
+
+    /***
+     * @function UnitScript.AttachUnit
+     */
+
+    /***
+     * @function UnitScript.DropUnit
+     */
+  `);
+  const entries: [string, Doc[]][] = [["a.cpp", docs]];
+  const errors = applyFileContexts(entries);
+  t.deepEqual(errors, []);
+  t.equal(entries[0][1].length, 2, "standalone marker doc removed");
+  t.deepEqual(getDocContexts(entries[0][1][0]), ["synced"]);
+  t.deepEqual(getDocContexts(entries[0][1][1]), ["synced"]);
+  t.end();
+});
+
+test("applyFileContexts: existing @context on doc is preserved", (t) => {
+  const docs = parseDocs(dedent`
+    /*** @context synced */
+
+    /***
+     * @function Foo.Bar
+     * @context unsynced
+     */
+  `);
+  const entries: [string, Doc[]][] = [["a.cpp", docs]];
+  applyFileContexts(entries);
+  t.deepEqual(getDocContexts(entries[0][1][0]), ["unsynced"]);
+  t.end();
+});
+
+test("applyFileContexts: no standalone marker is a no-op", (t) => {
+  const docs = parseDocs(dedent`
+    /***
+     * @function Foo.Bar
+     */
+  `);
+  const entries: [string, Doc[]][] = [["a.cpp", docs]];
+  const errors = applyFileContexts(entries);
+  t.deepEqual(errors, []);
+  t.equal(entries[0][1].length, 1);
+  t.deepEqual(getDocContexts(entries[0][1][0]), []);
+  t.end();
+});
+
+test("applyFileContexts: marker not at file start is an error", (t) => {
+  const docs = parseDocs(dedent`
+    /***
+     * @function Foo.Bar
+     */
+
+    /*** @context synced */
+  `);
+  const entries: [string, Doc[]][] = [["a.cpp", docs]];
+  const errors = applyFileContexts(entries);
+  t.equal(errors.length, 1);
+  t.ok(errors[0].includes("must be the first doc"));
+  t.end();
+});
+
+test("applyFileContexts: multiple markers in one file is an error", (t) => {
+  const docs = parseDocs(dedent`
+    /*** @context synced */
+
+    /*** @context unsynced */
+
+    /***
+     * @function Foo.Bar
+     */
+  `);
+  const entries: [string, Doc[]][] = [["a.cpp", docs]];
+  const errors = applyFileContexts(entries);
+  t.equal(errors.length, 1);
+  t.ok(errors[0].includes("multiple file-level @context"));
+  t.end();
+});
+
+// --- projectOutputs: @context fallback for non-Spring tables ---
+
+test("projectOutputs: non-Spring table with @context synced routes to synced.lua", (t) => {
+  const docs = parseDocs(dedent`
+    /*** @context synced */
+
+    /***
+     * @function UnitScript.AttachUnit
+     */
+  `);
+  const entries: [string, Doc[]][] = [["a.cpp", docs]];
+  applyFileContexts(entries);
+  const outputs = projectOutputs(entries);
+  t.equal(outputs.length, 1);
+  t.equal(outputs[0].name, "synced.lua");
+  t.end();
+});
+
+test("projectOutputs: non-Spring table with @context unsynced routes to unsynced.lua", (t) => {
+  const docs = parseDocs(dedent`
+    /*** @context unsynced */
+
+    /***
+     * @function ObjectRenderingTable.SetLODCount
+     */
+  `);
+  const entries: [string, Doc[]][] = [["a.cpp", docs]];
+  applyFileContexts(entries);
+  const outputs = projectOutputs(entries);
+  t.equal(outputs.length, 1);
+  t.equal(outputs[0].name, "unsynced.lua");
+  t.end();
+});
+
+test("projectOutputs: Spring prefix wins over @context fallback", (t) => {
+  const docs = parseDocs(dedent`
+    /*** @context unsynced */
+
+    /***
+     * @function SpringSynced.Foo
+     */
+  `);
+  const entries: [string, Doc[]][] = [["a.cpp", docs]];
+  applyFileContexts(entries);
+  const outputs = projectOutputs(entries);
+  t.equal(outputs.length, 1);
+  t.equal(outputs[0].name, "synced.lua");
+  t.end();
+});
+
+test("projectOutputs: multi-context doc falls through to shared.lua", (t) => {
+  const docs = parseDocs(dedent`
+    /*** @context synced, unsynced */
+
+    /***
+     * @function SomeTable.Foo
+     */
+  `);
+  const entries: [string, Doc[]][] = [["a.cpp", docs]];
+  applyFileContexts(entries);
+  const outputs = projectOutputs(entries);
+  t.equal(outputs.length, 1);
+  t.equal(outputs[0].name, "shared.lua");
   t.end();
 });

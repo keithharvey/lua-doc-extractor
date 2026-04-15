@@ -1,22 +1,104 @@
 import {
+  DefaultAttribute,
   EnumAttribute,
   FieldAttribute,
   FunctionAttribute,
   GlobalAttribute,
   TableAttribute,
 } from "./attribute";
-import { Doc, removeAttributes } from "./doc";
+import {
+  Doc,
+  filterAttributes,
+  hasAttribute,
+  removeAttributes,
+} from "./doc";
 import { FileOutput } from "./output";
 
-// Defensive no-op stripper: the `@context` tag was removed entirely from the
-// grammar of this tool (it used to drive per-file bucket assignment before
-// the split-tables-as-primary model). Any stray `@context` that sneaks into
-// a doc comment gets silently removed here so it doesn't leak into stubs.
+// Strips `@context` attributes after they've done their job in the pipeline
+// (fallback routing in `outputFileFor`). `@context` is an internal signal for
+// non-Spring tables — it doesn't belong in the emitted stubs.
 export function removeContextAttributes(docs: Doc[]): Doc[] {
   for (const doc of docs) {
     removeAttributes(doc, "context");
   }
   return docs;
+}
+
+// Doc types that mark a doc as "declaring something" (function, table, class,
+// etc.). A doc that has a `@context` and none of these is a file-level marker
+// — its context applies to every other doc in the same file.
+const DECLARATION_ATTR_TYPES = [
+  "function",
+  "table",
+  "class",
+  "enum",
+  "global",
+  "field",
+] as const;
+
+function isFileLevelContextDoc(doc: Doc): boolean {
+  return (
+    hasAttribute(doc, "context") &&
+    !DECLARATION_ATTR_TYPES.some((t) => hasAttribute(doc, t))
+  );
+}
+
+// Parse a doc's `@context` attribute list into a set of bucket names. The
+// attribute grammar carries comma-separated values in `description` (e.g.
+// `@context synced, unsynced`).
+export function getDocContexts(doc: Doc): string[] {
+  const contextAttrs = filterAttributes(doc, "context") as DefaultAttribute[];
+  const contexts = new Set<string>();
+  for (const attr of contextAttrs) {
+    for (const part of attr.args.description.split(",")) {
+      const trimmed = part.trim();
+      if (trimmed) contexts.add(trimmed);
+    }
+  }
+  return [...contexts];
+}
+
+// Find file-level `@context` markers (a standalone doc with only `@context`
+// and no declaration) and propagate their context onto every other doc in the
+// same file that doesn't already have one. The marker doc is then removed.
+// Returns authoring errors (e.g. multiple markers per file, marker not at
+// file start) rather than throwing.
+export function applyFileContexts(
+  fileEntries: readonly (readonly [string, Doc[]])[]
+): string[] {
+  const errors: string[] = [];
+  for (const [path, docs] of fileEntries) {
+    const markerIndices: number[] = [];
+    for (let i = 0; i < docs.length; i++) {
+      if (isFileLevelContextDoc(docs[i])) markerIndices.push(i);
+    }
+    if (markerIndices.length === 0) continue;
+    if (markerIndices.length > 1) {
+      errors.push(
+        `'${path}': multiple file-level @context docs (found ${markerIndices.length}, expected at most 1)`
+      );
+      continue;
+    }
+    if (markerIndices[0] !== 0) {
+      errors.push(
+        `'${path}': file-level @context doc must be the first doc in the file`
+      );
+      continue;
+    }
+    const fileContexts = getDocContexts(docs[0]);
+    docs.splice(0, 1);
+    if (fileContexts.length === 0) continue;
+    for (const doc of docs) {
+      if (hasAttribute(doc, "context")) continue;
+      for (const ctx of fileContexts) {
+        doc.attributes.push({
+          attributeType: "context",
+          args: { description: ctx },
+        });
+      }
+    }
+  }
+  return errors;
 }
 
 // Each doc that declares a table method has a qualified name like
@@ -91,11 +173,27 @@ const SPRING_OUTPUTS: ReadonlyMap<string, { file: string; preamble: string }> =
 
 const FALLBACK_OUTPUT = "shared.lua";
 
+// Non-Spring tables (UnitScript, ObjectRendering, etc.) don't carry a bucket
+// in their `@function` prefix, so they rely on a file-level `@context` tag
+// (propagated by `applyFileContexts`) to land in the right output. A single
+// `synced` or `unsynced` context maps to that bucket; anything else — mixed
+// contexts or unrecognized names — falls through to shared.
+const CONTEXT_TO_OUTPUT: ReadonlyMap<string, string> = new Map([
+  ["synced", "synced.lua"],
+  ["unsynced", "unsynced.lua"],
+  ["shared", "shared.lua"],
+]);
+
 function outputFileFor(doc: Doc): string {
   const table = getDocTableName(doc);
   if (table != null) {
     const entry = SPRING_OUTPUTS.get(table);
     if (entry) return entry.file;
+  }
+  const contexts = getDocContexts(doc);
+  if (contexts.length === 1) {
+    const mapped = CONTEXT_TO_OUTPUT.get(contexts[0]);
+    if (mapped) return mapped;
   }
   return FALLBACK_OUTPUT;
 }

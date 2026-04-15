@@ -9,7 +9,11 @@ import { glob } from "glob";
 import { dirname, join } from "path";
 import { addHeader, formatDocs, getDocs, processDocs } from ".";
 import project from "../package.json";
-import { lintDuplicateDeclarations, projectOutputs } from "./context";
+import {
+  applyFileContexts,
+  lintDuplicateDeclarations,
+  projectOutputs,
+} from "./context";
 import { Doc } from "./doc";
 import { mergeFileOutputs } from "./output";
 import { toResultAsync } from "./result";
@@ -195,6 +199,7 @@ async function runAsync() {
 
   const valid = processed.filter((e) => e != null) as [string, Doc[]][];
 
+  errors.push(...applyFileContexts(valid));
   errors.push(...lintDuplicateDeclarations(valid));
   let outputs = projectOutputs(valid);
   if (file !== undefined) {
